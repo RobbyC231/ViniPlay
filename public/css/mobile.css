@@ -1,0 +1,88 @@
+/*
+ * mobile.css
+ * Fork-local styles (RobbyC231/ViniPlay, branch `mobile`). Loaded after index.html's
+ * inline <style>, so rules here win on equal specificity. JS counterpart:
+ * /js/modules/mobile.js. See the Obsidian note "ViniPlay Stack".
+ *
+ * Sections: 1. auto-hide header (all sizes)  2. phone layout (<768px)
+ */
+
+/* --- 1. Auto-hide header ------------------------------------------------------------
+ * The headers slide off with a transform instead of collapsing their height, so the
+ * browser never re-lays-out the guide mid-animation. <main> moves with them and grows by
+ * the same amount (negative margin) so no gap opens at the bottom.
+ * --vp-header-h is measured by mobile.js. 220ms must match TOGGLE_SETTLE_MS there.
+ */
+#main-header,
+#app-container > main {
+    transition: transform 220ms cubic-bezier(0.2, 0.8, 0.2, 1),
+                margin-bottom 0s linear 220ms,
+                visibility 0s linear 0s;
+    will-change: transform;
+}
+
+#app-container.header-collapsed #main-header,
+#app-container.header-collapsed > main {
+    transform: translate3d(0, calc(-1 * var(--vp-header-h, 0px)), 0);
+}
+
+/* Grow immediately on hide (the new space is off-screen below), shrink only after the
+ * slide back has finished (delay above), so neither direction moves the content. */
+#app-container.header-collapsed > main {
+    margin-bottom: calc(-1 * var(--vp-header-h, 0px));
+    transition: transform 220ms cubic-bezier(0.2, 0.8, 0.2, 1), margin-bottom 0s;
+}
+
+/* Off-screen controls must not take focus or taps. */
+#app-container.header-collapsed #main-header,
+#app-container.header-collapsed #unified-guide-header {
+    visibility: hidden;
+    transition: transform 220ms cubic-bezier(0.2, 0.8, 0.2, 1), visibility 0s linear 220ms;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    #main-header,
+    #app-container > main,
+    #app-container.header-collapsed #main-header,
+    #app-container.header-collapsed > main,
+    #app-container.header-collapsed #unified-guide-header {
+        transition: none;
+    }
+}
+
+/* --- 2. Phone layout --------------------------------------------------------------- */
+@media (max-width: 767px) {
+    /* 100vh includes the area behind mobile browser toolbars; dvh is what is visible. */
+    @supports (height: 100dvh) {
+        body.h-screen,
+        #app-container {
+            height: 100dvh;
+        }
+    }
+
+    /* The PWA uses a black-translucent status bar (viewport-fit=cover): keep the header
+     * clear of the notch / status bar. */
+    #main-header {
+        padding-top: max(1rem, env(safe-area-inset-top));
+    }
+
+    /* iOS zooms the page on focus of any field under 16px, which shifts the whole layout
+     * when tapping the search box. */
+    input,
+    select,
+    textarea {
+        font-size: 16px !important;
+    }
+
+    /* Upstream pins the results at top:100px of the page, which on a phone sits on top of
+     * the stacked filters and the search box itself. Anchor them under the guide header. */
+    #page-guide {
+        position: relative;
+    }
+
+    #search-results-container {
+        top: var(--vp-guide-header-h, 100px);
+        max-height: min(20rem, 50dvh);
+        overscroll-behavior: contain;
+    }
+}

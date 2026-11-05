@@ -24,6 +24,7 @@ import { ICONS } from './modules/icons.js'; // MODIFIED: Import the new icon lib
 //-- ENHANCEMENT: Import the new handler for channel selector clicks from the admin page.
 import { initActivityPage, setupAdminEventListeners, handleActivityUpdate, handleAdminChannelClick } from './modules/admin.js';
 import { initTelemetry } from './modules/telemetry.js';
+import { initMobile } from './modules/mobile.js';
 
 // The initializeCastApi function is no longer called directly from here,
 // but the cast.js module will handle its own initialization via the window callback.
@@ -185,6 +186,7 @@ export async function initMainApp() {
     console.log('[MAIN] Setting up all event listeners...');
     setupCoreEventListeners();
     setupGuideEventListeners();
+    initMobile(); // Fork: mobile layer, incl. the header auto-hide (replaces upstream's)
     setupPlayerEventListeners();
     setupSettingsEventListeners();
     setupDvrEventListeners();
