@@ -1,0 +1,62 @@
+# Fork maintenance (RobbyC231/ViniPlay). Keeps `main` identical to upstream and merges
+# it into `mobile`, the branch video-01 builds from. Merge, not rebase: `mobile` history
+# never changes, so the commit SHA pinned in proxmox-iac stays valid and no force-push
+# is needed. A conflict fails the run (GitHub emails the failure) and pushes nothing;
+# resolve it locally in ~/ViniPlay on agent-01. See the Obsidian note "ViniPlay Stack".
+#
+# Pushes made with GITHUB_TOKEN start no other workflows, so upstream's
+# docker-image.yml (push to main) never runs here.
+name: Sync upstream
+
+on:
+  schedule:
+    - cron: "23 4 * * 1" # Mondays 04:23 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency: sync-upstream
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: mobile
+          fetch-depth: 0
+
+      - name: Fetch upstream
+        run: |
+          git remote add upstream https://github.com/ardoviniandrea/ViniPlay.git
+          git fetch --no-tags upstream main
+
+      - name: Mirror upstream main
+        run: git push origin refs/remotes/upstream/main:refs/heads/main
+
+      - name: Merge upstream into mobile
+        run: |
+          if git merge-base --is-ancestor upstream/main HEAD; then
+            echo "mobile already contains upstream $(git rev-parse --short upstream/main)" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898283+github-actions[bot]@users.noreply.github.com"
+          if git merge --no-edit upstream/main; then
+            git push origin HEAD:mobile
+            {
+              echo "Merged upstream $(git rev-parse --short upstream/main) into mobile: $(git rev-parse HEAD)"
+              echo
+              echo "Deploy: set viniplay_git_ref to that SHA in proxmox-iac, then run site.yml."
+            } >> "$GITHUB_STEP_SUMMARY"
+          else
+            {
+              echo "Upstream $(git rev-parse --short upstream/main) conflicts with mobile in:"
+              git diff --name-only --diff-filter=U | sed 's/^/- /'
+              echo
+              echo "Nothing was pushed. Resolve with git merge upstream/main in ~/ViniPlay."
+            } >> "$GITHUB_STEP_SUMMARY"
+            git merge --abort
+            exit 1
+          fi
