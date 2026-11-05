@@ -12,6 +12,11 @@ on:
   schedule:
     - cron: "23 4 * * 1" # Mondays 04:23 UTC
   workflow_dispatch:
+    inputs:
+      test_notify:
+        description: "Post a test message to Discord (checks the webhook secret)"
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -26,6 +31,10 @@ jobs:
         with:
           ref: mobile
           fetch-depth: 0
+
+      - name: Queue test notification
+        if: inputs.test_notify
+        run: echo "Test message from a manual run; the sync itself ran as normal." > "$RUNNER_TEMP/notify.txt"
 
       - name: Fetch upstream
         run: |
@@ -43,20 +52,41 @@ jobs:
           fi
           git config user.name "github-actions[bot]"
           git config user.email "41898283+github-actions[bot]@users.noreply.github.com"
+          up=$(git rev-parse --short upstream/main)
           if git merge --no-edit upstream/main; then
             git push origin HEAD:mobile
             {
-              echo "Merged upstream $(git rev-parse --short upstream/main) into mobile: $(git rev-parse HEAD)"
+              echo "Merged upstream $up into mobile: $(git rev-parse HEAD)"
               echo
               echo "Deploy: set viniplay_git_ref to that SHA in proxmox-iac, then run site.yml."
-            } >> "$GITHUB_STEP_SUMMARY"
+            } | tee "$RUNNER_TEMP/notify.txt" >> "$GITHUB_STEP_SUMMARY"
           else
             {
-              echo "Upstream $(git rev-parse --short upstream/main) conflicts with mobile in:"
+              echo "Upstream $up conflicts with mobile in:"
               git diff --name-only --diff-filter=U | sed 's/^/- /'
               echo
               echo "Nothing was pushed. Resolve with git merge upstream/main in ~/ViniPlay."
-            } >> "$GITHUB_STEP_SUMMARY"
+            } | tee "$RUNNER_TEMP/notify.txt" >> "$GITHUB_STEP_SUMMARY"
             git merge --abort
             exit 1
           fi
+
+      # Posts only when something happened: a merge, a conflict, or any other failure.
+      # Up-to-date runs stay quiet. No secret set = no post.
+      - name: Notify Discord
+        if: always()
+        env:
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          FAILED: ${{ job.status == 'failure' }}
+        run: |
+          [ -n "$DISCORD_WEBHOOK" ] || exit 0
+          f="$RUNNER_TEMP/notify.txt"
+          if [ ! -s "$f" ]; then
+            [ "$FAILED" = true ] || exit 0
+            echo "Sync upstream failed before the merge step." > "$f"
+          fi
+          if [ "$FAILED" = true ]; then title="ViniPlay fork: upstream sync FAILED"; else title="ViniPlay fork: upstream merged"; fi
+          jq -n --arg t "$title" --arg d "$(cat "$f")" --arg u "$RUN_URL" \
+            '{username: "ViniPlay fork", content: "**\($t)**\n\($d)\n<\($u)>"}' |
+            curl -fsS -H 'Content-Type: application/json' -d @- "$DISCORD_WEBHOOK"
